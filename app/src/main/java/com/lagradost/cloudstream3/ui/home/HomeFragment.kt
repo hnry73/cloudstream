@@ -23,6 +23,7 @@ import androidx.core.view.isVisible
 import androidx.fragment.app.activityViewModels
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
@@ -56,6 +57,10 @@ import com.lagradost.cloudstream3.ui.settings.Globals.PHONE
 import com.lagradost.cloudstream3.ui.settings.Globals.TV
 import com.lagradost.cloudstream3.ui.settings.Globals.isLandscape
 import com.lagradost.cloudstream3.ui.settings.Globals.isLayout
+import com.lagradost.cloudstream3.recommendation.data.UserFeedbackRepository
+import com.lagradost.cloudstream3.recommendation.logic.CandidateGenerator
+import com.lagradost.cloudstream3.recommendation.logic.RecommendationManager
+import com.lagradost.cloudstream3.recommendation.ui.AiRecommendationAdapter
 import com.lagradost.cloudstream3.utils.AppContextUtils.filterProviderByPreferredMedia
 import com.lagradost.cloudstream3.utils.AppContextUtils.getApiProviderLangSettings
 import com.lagradost.cloudstream3.utils.AppContextUtils.isNetworkAvailable
@@ -588,6 +593,10 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
 
     private var bottomSheetDialog: BottomSheetDialog? = null
     private var homeMasterAdapter: HomeParentItemAdapterPreview? = null
+    private var aiRecommendationAdapter: AiRecommendationAdapter? = null
+    private var userFeedbackRepository: UserFeedbackRepository? = null
+    private val recommendationManager = RecommendationManager()
+    private val candidateGenerator = CandidateGenerator()
 
     var lastSavedHomepage: String? = null
 
@@ -626,7 +635,14 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
     @SuppressLint("SetTextI18n")
     override fun onBindingCreated(binding: FragmentHomeBinding) {
         context?.let { HomeChildItemAdapter.updatePosterSize(it) }
+        userFeedbackRepository = context?.let { UserFeedbackRepository(it) }
+        aiRecommendationAdapter = AiRecommendationAdapter { recommendation ->
+            activity?.loadSearchResult(recommendation.item)
+        }
+
         binding.apply {
+            homeAiRecommendationsRecycler.layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+            homeAiRecommendationsRecycler.adapter = aiRecommendationAdapter
             //homeChangeApiLoading.setOnClickListener(apiChangeClickListener)
             //homeChangeApiLoading.setOnClickListener(apiChangeClickListener)
             homeApiFab.setOnClickListener(apiChangeClickListener)
@@ -746,6 +762,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
                         })
 
                         saveHomepageToTV(d)
+                        loadAiRecommendations(d.values.flatMap { it.list.list })
 
                         homeLoading.isVisible = false
                         homeLoadingError.isVisible = false
@@ -884,4 +901,32 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
             }
         }*/
     }
+
+
+    private fun loadAiRecommendations(popularItems: List<SearchResponse>) {
+        ioSafe {
+            val repo = userFeedbackRepository ?: return@ioSafe
+            val ratings = repo.getAllRatings()
+            val history = repo.getRecentHistory(50)
+            val userSummary = recommendationManager.buildUserSummary(
+                ratings = ratings.map { it.contentName to it.userRating },
+                topGenres = ratings.mapNotNull { it.genreSummary }
+                    .groupingBy { it }
+                    .eachCount()
+                    .entries
+                    .sortedByDescending { it.value }
+                    .map { it.key }
+                    .take(5)
+            )
+            val candidates = candidateGenerator.generateCandidates(ratings, history, popularItems, 20)
+            recommendationManager.buildPromptPayload(userSummary, candidates)
+            val recommendations = recommendationManager.rerankFallback(userSummary, candidates)
+
+            activity?.runOnUiThread {
+                binding?.homeAiRecommendationsContainer?.isVisible = recommendations.isNotEmpty()
+                aiRecommendationAdapter?.submitList(recommendations)
+            }
+        }
+    }
+
 }

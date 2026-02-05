@@ -175,6 +175,41 @@
                 android:layout_marginTop="10dp"
                 android:text="@string/upload_sync"
                 app:icon="@drawable/baseline_sync_24" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="@string/recommendation_local_feedback_title"
+                android:textColor="?attr/textColor"
+                android:textStyle="bold" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/result_local_rating"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="-5dp"
+                android:layout_marginEnd="-5dp"
+                android:stepSize="1"
+                android:value="7"
+                android:valueFrom="1"
+                android:valueTo="10"
+                app:labelStyle="@style/BlackLabel"
+                app:tickVisible="false" />
+
+            <ListView
+                android:id="@+id/result_local_watch_state_check"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                tools:listitem="@layout/sort_bottom_single_choice" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/result_local_save_feedback"
+                style="@style/WhiteButton"
+                android:layout_width="match_parent"
+                android:layout_marginTop="8dp"
+                android:text="@string/recommendation_save_feedback" />
+
         </LinearLayout>
 
     </ScrollView>
