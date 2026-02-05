@@ -763,4 +763,12 @@
     <string name="top_left">Top left</string>
     <string name="top_center">Top center</string>
     <string name="top_right">Top right</string>
+
+    <string name="home_ai_recommendations_title">Senin İçin Seçtiklerimiz (AI Destekli)</string>
+    <string name="recommendation_local_feedback_title">Kişisel puanın ve izleme durumu</string>
+    <string name="recommendation_save_feedback">Puanı Kaydet (Yerel + Bulut)</string>
+    <string name="recommendation_feedback_saved">Puan kaydedildi ve senkronizasyon kuyruğuna alındı.</string>
+    <string name="recommendation_watched">İzledim</string>
+    <string name="recommendation_plan_to_watch">İzleyeceğim</string>
+
 </resources>

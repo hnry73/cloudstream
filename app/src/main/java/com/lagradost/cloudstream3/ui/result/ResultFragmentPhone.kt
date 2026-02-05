@@ -70,6 +70,7 @@ import com.lagradost.cloudstream3.utils.AppContextUtils.loadCache
 import com.lagradost.cloudstream3.utils.AppContextUtils.openBrowser
 import com.lagradost.cloudstream3.utils.AppContextUtils.updateHasTrailers
 import com.lagradost.cloudstream3.utils.BackPressedCallbackHelper.attachBackPressedCallback
+import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.cloudstream3.utils.BackPressedCallbackHelper.detachBackPressedCallback
 import com.lagradost.cloudstream3.utils.BatteryOptimizationChecker.openBatteryOptimizationSettings
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -90,9 +91,12 @@ import com.lagradost.cloudstream3.utils.UIHelper.setNavigationBarColorCompat
 import com.lagradost.cloudstream3.utils.VideoDownloadHelper
 import com.lagradost.cloudstream3.utils.getImageFromDrawable
 import com.lagradost.cloudstream3.utils.setText
+import com.lagradost.cloudstream3.utils.asStringNull
 import com.lagradost.cloudstream3.utils.setTextHtml
 import java.net.URLEncoder
 import kotlin.math.roundToInt
+import com.lagradost.cloudstream3.recommendation.data.UserFeedbackRepository
+import com.lagradost.cloudstream3.recommendation.data.WatchIntent
 
 open class ResultFragmentPhone : FullScreenPlayer() {
     private val gestureRegionsListener =
@@ -345,6 +349,7 @@ open class ResultFragmentPhone : FullScreenPlayer() {
         super.onViewCreated(view, savedInstanceState)
 
         // ===== setup =====
+        userFeedbackRepository = context?.let { UserFeedbackRepository(it) }
         fixSystemBarsPadding(view)
         val storedData = getStoredData() ?: return
         activity?.window?.decorView?.clearFocus()
@@ -777,6 +782,7 @@ open class ResultFragmentPhone : FullScreenPlayer() {
                     register(resultCastItems)
                 }
                 (data as? Resource.Success)?.value?.let { d ->
+                    currentFeedbackItem = createFeedbackSearchResponse(d)
                     resultVpn.setText(d.vpnText)
                     resultInfo.setText(d.metaText)
                     resultNoEpisodes.setText(d.noEpisodesFoundText)
@@ -1069,17 +1075,37 @@ open class ResultFragmentPhone : FullScreenPlayer() {
                 R.string.type_re_watching
             ).map { ctx.getString(it) }
             arrayAdapter.addAll(items)
+
+            val localWatchStateAdapter = ArrayAdapter<String>(ctx, R.layout.sort_bottom_single_choice)
+            localWatchStateAdapter.addAll(
+                listOf(
+                    ctx.getString(R.string.recommendation_watched),
+                    ctx.getString(R.string.recommendation_plan_to_watch),
+                )
+            )
+
             syncBinding?.apply {
                 resultSyncCheck.choiceMode = AbsListView.CHOICE_MODE_SINGLE
                 resultSyncCheck.adapter = arrayAdapter
                 setListViewHeightBasedOnItems(resultSyncCheck)
 
+                resultLocalWatchStateCheck.choiceMode = AbsListView.CHOICE_MODE_SINGLE
+                resultLocalWatchStateCheck.adapter = localWatchStateAdapter
+                resultLocalWatchStateCheck.setItemChecked(0, true)
+                setListViewHeightBasedOnItems(resultLocalWatchStateCheck)
+
                 resultSyncCheck.setOnItemClickListener { _, _, which, _ ->
                     syncModel.setStatus(which - 1)
+                }
+                resultLocalWatchStateCheck.setOnItemClickListener { _, _, which, _ ->
+                    localWatchIntent = if (which == 0) WatchIntent.WATCHED else WatchIntent.PLAN_TO_WATCH
                 }
 
                 resultSyncRating.addOnChangeListener { it, value, fromUser ->
                     if (fromUser) syncModel.setScore(Score.from(value, it.valueTo.roundToInt()))
+                }
+                resultLocalRating.addOnChangeListener { _, value, _ ->
+                    localRating = value.toInt().coerceIn(1, 10)
                 }
 
                 resultSyncAddEpisode.setOnClickListener {
@@ -1101,6 +1127,20 @@ open class ResultFragmentPhone : FullScreenPlayer() {
 
         syncBinding?.resultSyncSetScore?.setOnClickListener {
             syncModel.publishUserData()
+        }
+
+        syncBinding?.resultLocalSaveFeedback?.setOnClickListener {
+            val card = currentFeedbackItem ?: return@setOnClickListener
+            ioSafe {
+                userFeedbackRepository?.upsertRating(
+                    item = card,
+                    rating = localRating,
+                    watchIntent = localWatchIntent,
+                    genreSummary = card.type?.name
+                )
+                userFeedbackRepository?.syncPendingToFirebase()
+            }
+            showToast(R.string.recommendation_feedback_saved, Toast.LENGTH_SHORT)
         }
 
         observe(viewModel.watchStatus) { watchType ->
@@ -1336,4 +1376,20 @@ open class ResultFragmentPhone : FullScreenPlayer() {
             }
         }
     }
+
+
+    private fun createFeedbackSearchResponse(data: ResultData): SearchResponse {
+        return object : SearchResponse {
+            override val name: String = data.title
+            override val url: String = data.url
+            override val apiName: String = data.apiName.asStringNull(context) ?: "unknown"
+            override var type = null
+            override var posterUrl: String? = data.posterImage
+            override var posterHeaders: Map<String, String>? = data.posterHeaders
+            override var id: Int? = null
+            override var quality = null
+            override var score = null
+        }
+    }
+
 }
